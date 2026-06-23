@@ -72,6 +72,10 @@ pub struct Runtime<R> {
     drain: DrainState,
     compaction: CompactionState,
     watchdog: WatchdogState,
+    /// Exponential backoff counter for screen-off cycles (doubles each tick, caps at max_backoff_sec).
+    backoff: u32,
+    /// Linear counter for screen-on/charging cycles (increments up to backoff_on_cap).
+    backoff_on: u32,
 }
 
 #[derive(Default)]
@@ -95,6 +99,9 @@ struct DrainState {
     last_display_on: bool,
     screen_on: Duration,
     screen_off: Duration,
+    drain_24h_start_level: u8,
+    drain_24h_start_time: Option<Instant>,
+    drain_24h: u8,
 }
 
 #[derive(Default)]
@@ -119,6 +126,8 @@ impl<R: CommandRunner> Runtime<R> {
             drain: DrainState::default(),
             compaction: CompactionState::default(),
             watchdog: WatchdogState::default(),
+            backoff: 1,
+            backoff_on: 1,
         }
     }
 
@@ -827,14 +836,33 @@ impl<R: CommandRunner> Runtime<R> {
         let reference_level = self.drain.reference_level.unwrap_or(state.level);
         let drain = reference_level.saturating_sub(state.level);
         let per_hour = u64::from(drain) * 3600 / elapsed.as_secs().max(1);
+
+        // 24h tracking: reset start point once 86400s elapsed
+        let drain_24h_start_time = self.drain.drain_24h_start_time.get_or_insert(now);
+        let elapsed_24h = now.saturating_duration_since(*drain_24h_start_time);
+        if elapsed_24h >= Duration::from_secs(86400) {
+            let start_level = self.drain.drain_24h_start_level;
+            self.drain.drain_24h = start_level.saturating_sub(state.level);
+            self.drain.drain_24h_start_level = state.level;
+            self.drain.drain_24h_start_time = Some(now);
+        }
+        let drain_24h = self.drain.drain_24h;
+
+        let on_min = self.drain.screen_on.as_secs() / 60;
+        let off_min = self.drain.screen_off.as_secs() / 60;
         let value = format!(
-            "{}%/hr|on:{}m|off:{}m|dur:{}s",
-            per_hour,
-            self.drain.screen_on.as_secs() / 60,
-            self.drain.screen_off.as_secs() / 60,
-            elapsed.as_secs()
+            "{}%/hr|on:{}m|off:{}m|dur:{}s|24h:{}%",
+            per_hour, on_min, off_min, elapsed.as_secs(), drain_24h
         );
         self.cmd("setprop", &["debug.dcx.drain", &value])?;
+        self.noti(&format!(
+            "Drain: {}%/hr | on:{}m | off:{}m | 24h:{}%",
+            per_hour, on_min, off_min, drain_24h
+        ))?;
+
+        // Carry 24h state forward; reset hourly tracking
+        let drain_24h_sl = self.drain.drain_24h_start_level;
+        let drain_24h_st = self.drain.drain_24h_start_time;
         self.drain = DrainState {
             reference_level: Some(state.level),
             reference_time: Some(now),
@@ -842,6 +870,9 @@ impl<R: CommandRunner> Runtime<R> {
             last_display_on: state.display_on,
             screen_on: Duration::default(),
             screen_off: Duration::default(),
+            drain_24h_start_level: drain_24h_sl,
+            drain_24h_start_time: drain_24h_st,
+            drain_24h,
         };
         Ok(())
     }
@@ -926,7 +957,23 @@ impl<R: CommandRunner> Runtime<R> {
     }
 
     fn wait_for_next_cycle(&mut self, state: DeviceState) {
-        let timeout = self.config.sleep_duration(state.display_on, state.charging);
+        const MAX_BACKOFF_SEC: u32 = 320;
+        const MAX_BACKOFF_ON_CAP: u32 = 6;
+        const BASE_OFF_INJECT: u32 = 60; // padding_sleep called with inject=60
+        const DEFAULT_ON: u32 = 80;      // padding_sleep called with default=80
+
+        let timeout = if state.display_on || state.charging {
+            self.backoff = 1;
+            self.backoff_on = (self.backoff_on + 1).min(MAX_BACKOFF_ON_CAP);
+            Duration::from_secs(u64::from(DEFAULT_ON + self.backoff_on * 5))
+        } else {
+            self.backoff_on = 0;
+            let duration = (BASE_OFF_INJECT * self.backoff).min(MAX_BACKOFF_SEC);
+            self.backoff = (self.backoff * 2).min(MAX_BACKOFF_SEC);
+            Duration::from_secs(u64::from(duration))
+        };
+
+        // Use property_wait when available so we wake immediately on screen change.
         if let Some(info) = coreshift_core::android_property::android_property_find(SCREEN_STATE_PROP)
             && let Ok(value) = coreshift_core::android_property::android_property_read(info)
         {

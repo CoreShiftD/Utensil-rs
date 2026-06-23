@@ -1,6 +1,5 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 pub const DEFAULT_CONFIG_PATH: &str = "/data/local/tmp/utensil/utensil.conf";
 pub const ROM_DEFAULT_CONFIG_PATH: &str = "/system/etc/utensil/utensil.conf";
@@ -151,14 +150,6 @@ impl UtensilConfig {
             notification: FeatureConfig { enabled: false },
             logging: FeatureConfig { enabled: true },
             dry_run: false,
-        }
-    }
-
-    pub fn sleep_duration(&self, display_on: bool, charging: bool) -> Duration {
-        if display_on || charging {
-            Duration::from_secs(85)
-        } else {
-            Duration::from_secs(160)
         }
     }
 
