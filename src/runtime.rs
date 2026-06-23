@@ -1301,7 +1301,7 @@ fn parse_enabled_third_party_packages(xml: &str) -> Vec<String> {
 
 /// Extract the value of an XML attribute like key="value" from a tag line.
 fn attr_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
-    let search = format!("{}="", key);
+    let search = format!("{}=\"", key);
     let start = line.find(search.as_str())? + search.len();
     let end = line[start..].find('"')? + start;
     Some(&line[start..end])
