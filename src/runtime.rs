@@ -854,7 +854,7 @@ impl<R: CommandRunner> Runtime<R> {
             "{}%/hr|on:{}m|off:{}m|dur:{}s|24h:{}%",
             per_hour, on_min, off_min, elapsed.as_secs(), drain_24h
         );
-        self.cmd("setprop", &["debug.dcx.drain", &value])?;
+        self.set_property("debug.dcx.drain", &value);
         self.noti(&format!(
             "Drain: {}%/hr | on:{}m | off:{}m | 24h:{}%",
             per_hour, on_min, off_min, drain_24h
@@ -1010,28 +1010,43 @@ impl<R: CommandRunner> Runtime<R> {
     }
 
     fn running_user_packages(&mut self) -> io::Result<Vec<String>> {
-        let output = self.runner.output("ps", &["-A", "-o", "USER,NAME"])?;
+        // Collect PIDs from cgroup top-app and foreground cpusets instead of
+        // scanning all of /proc. stat(/proc/<pid>) gives owner UID via file
+        // ownership — no /status parse needed.
+        let mut pids: Vec<i32> = Vec::new();
+        for cpuset in &[
+            "/dev/cpuset/top-app/cgroup.procs",
+            "/dev/cpuset/foreground/cgroup.procs",
+        ] {
+            if let Ok(content) = fs::read_to_string(cpuset) {
+                for line in content.lines() {
+                    if let Ok(pid) = line.trim().parse::<i32>() {
+                        if !pids.contains(&pid) {
+                            pids.push(pid);
+                        }
+                    }
+                }
+            }
+        }
+
         let mut packages = Vec::new();
-        for line in output.lines().skip(1) {
-            let mut fields = line.split_whitespace();
-            let Some(user) = fields.next() else {
-                continue;
-            };
-            let Some(name) = fields.next() else {
-                continue;
-            };
-            if !user.starts_with("u0_") {
-                continue;
-            }
-            let package = name.split(':').next().unwrap_or(name);
-            if packages.iter().any(|existing| existing == package) {
-                continue;
-            }
+        for pid in pids {
+            // stat /proc/<pid> — file uid == process uid
+            let proc_path = format!("/proc/{}", pid);
+            let Ok(meta) = fs::metadata(&proc_path) else { continue };
+            use std::os::unix::fs::MetadataExt;
+            let uid = meta.uid();
+            // u0_a* apps: uid 10000–19999 (primary user)
+            if uid < 10000 || uid >= 20000 { continue }
+            let Ok(cmdline) = coreshift_core::proc::read_proc_cmdline(pid) else { continue };
+            if cmdline.is_empty() { continue }
+            let package = cmdline.split(':').next().unwrap_or(&cmdline).trim_matches('\0');
+            if package.is_empty() { continue }
+            if packages.iter().any(|e: &String| e == package) { continue }
             packages.push(package.to_string());
         }
         Ok(packages)
     }
-
     fn protected_packages(&self) -> Vec<String> {
         fs::read_to_string(&self.config.paths.whitelist_file)
             .unwrap_or_default()
