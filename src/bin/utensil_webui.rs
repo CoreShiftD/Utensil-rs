@@ -418,7 +418,7 @@ fn update_config(updates: BTreeMap<String, String>) -> io::Result<()> {
 }
 
 fn default_config_text() -> &'static str {
-    include_str!("../../../packaging/magisk/utensil.conf")
+    include_str!("../../packaging/magisk/utensil.conf")
 }
 
 struct ExecResult {
