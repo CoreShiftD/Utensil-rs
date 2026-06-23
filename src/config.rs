@@ -27,6 +27,7 @@ pub struct PathConfig {
     pub threshold_file: PathBuf,
     pub whitelist_file: PathBuf,
     pub drain_log_file: PathBuf,
+    pub packages_xml: PathBuf,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -105,6 +106,7 @@ impl UtensilConfig {
                 threshold_file: home.join("battery_threshold.dat"),
                 whitelist_file: home.join("fileconfig.txt"),
                 drain_log_file: PathBuf::from("/sdcard/chargelog.txt"),
+                packages_xml: PathBuf::from("/data/system/packages.xml"),
                 home,
             },
             battery: BatteryConfig {
@@ -196,6 +198,7 @@ path.learning_file={learning_file}
 path.threshold_file={threshold_file}
 path.whitelist_file={whitelist_file}
 path.drain_log_file={drain_log_file}
+path.packages_xml={packages_xml}
 ",
             battery_enabled = self.battery.enabled,
             dynamic_threshold = self.battery.dynamic_threshold,
@@ -230,6 +233,7 @@ path.drain_log_file={drain_log_file}
             threshold_file = self.paths.threshold_file.display(),
             whitelist_file = self.paths.whitelist_file.display(),
             drain_log_file = self.paths.drain_log_file.display(),
+            packages_xml = self.paths.packages_xml.display(),
         )
     }
 }
@@ -367,6 +371,7 @@ pub fn parse_config_with_base(
             "path.threshold_file" => config.paths.threshold_file = PathBuf::from(value),
             "path.whitelist_file" => config.paths.whitelist_file = PathBuf::from(value),
             "path.drain_log_file" => config.paths.drain_log_file = PathBuf::from(value),
+            "path.packages_xml" => config.paths.packages_xml = PathBuf::from(value),
             _ => return Err(err(line_no, format!("unknown key `{key}`"))),
         }
     }

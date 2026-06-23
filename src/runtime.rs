@@ -76,6 +76,10 @@ pub struct Runtime<R> {
     backoff: u32,
     /// Linear counter for screen-on/charging cycles (increments up to backoff_on_cap).
     backoff_on: u32,
+    /// Cached list of enabled third-party packages parsed from packages.xml.
+    pkg_cache: Vec<String>,
+    /// mtime of packages.xml at last parse; None = never loaded.
+    pkg_cache_mtime: Option<std::time::SystemTime>,
 }
 
 #[derive(Default)]
@@ -128,6 +132,8 @@ impl<R: CommandRunner> Runtime<R> {
             watchdog: WatchdogState::default(),
             backoff: 1,
             backoff_on: 1,
+            pkg_cache: Vec::new(),
+            pkg_cache_mtime: None,
         }
     }
 
@@ -998,17 +1004,19 @@ impl<R: CommandRunner> Runtime<R> {
         parse_focusd_status_foreground(&status)
     }
 
+    /// Returns enabled third-party packages, cached from packages.xml.
+    /// Re-parses only when packages.xml mtime changes.
     fn enabled_third_party_packages(&mut self) -> io::Result<Vec<String>> {
-        let output = self.runner.output(
-            "cmd",
-            &["package", "list", "packages", "-3", "-e"],
-        )?;
-        Ok(output
-            .lines()
-            .filter_map(parse_package_line)
-            .collect())
+        let packages_xml = self.config.paths.packages_xml.to_string_lossy().into_owned();
+        let mtime = fs::metadata(&*packages_xml).ok().and_then(|m| m.modified().ok());
+        if mtime.is_some() && mtime == self.pkg_cache_mtime && !self.pkg_cache.is_empty() {
+            return Ok(self.pkg_cache.clone());
+        }
+        let content = fs::read_to_string(&*packages_xml)?;
+        self.pkg_cache = parse_enabled_third_party_packages(&content);
+        self.pkg_cache_mtime = mtime;
+        Ok(self.pkg_cache.clone())
     }
-
     fn running_user_packages(&mut self) -> io::Result<Vec<String>> {
         // Collect PIDs from cgroup top-app and foreground cpusets instead of
         // scanning all of /proc. stat(/proc/<pid>) gives owner UID via file
@@ -1266,6 +1274,37 @@ fn parse_focusd_status_foreground(status: &str) -> Option<String> {
             Some(value.to_string())
         }
     })
+}
+
+/// Parse enabled non-system packages from packages.xml.
+/// Matches lines like: <package name="com.example" ... flags="..." ...>
+/// Bit 1 of flags = SYSTEM (0x1); skip if set.
+fn parse_enabled_third_party_packages(xml: &str) -> Vec<String> {
+    let mut packages = Vec::new();
+    for line in xml.lines() {
+        let line = line.trim();
+        if !line.starts_with("<package ") {
+            continue;
+        }
+        let Some(name) = attr_value(line, "name") else { continue };
+        // flags bit 0 = ApplicationInfo.FLAG_SYSTEM
+        let is_system = attr_value(line, "flags")
+            .and_then(|f| u64::from_str_radix(f.trim_start_matches("0x"), 16).ok())
+            .map(|f| f & 0x1 != 0)
+            .unwrap_or(false);
+        if !is_system {
+            packages.push(name.to_owned());
+        }
+    }
+    packages
+}
+
+/// Extract the value of an XML attribute like key="value" from a tag line.
+fn attr_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    let search = format!("{}="", key);
+    let start = line.find(search.as_str())? + search.len();
+    let end = line[start..].find('"')? + start;
+    Some(&line[start..end])
 }
 
 #[cfg(test)]
