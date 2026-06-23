@@ -1,0 +1,33 @@
+[package]
+name = "utensil"
+version = "0.1.0"
+edition = "2024"
+license = "MPL-2.0"
+description = "Android battery and idle policy daemon for CoreShift"
+repository = "https://github.com/CoreShiftD/Utensil-rs"
+homepage = "https://github.com/CoreShiftD/Utensil-rs"
+readme = "README.md"
+keywords = ["android", "battery", "idle", "daemon", "cgroup"]
+categories = ["os::linux-apis"]
+
+[[bin]]
+name = "utensil-poker"
+path = "src/bin/utensil_poker.rs"
+
+[[bin]]
+name = "utensil-webui"
+path = "src/bin/utensil_webui.rs"
+
+[dependencies]
+libc = "0.2"
+coreshift-core = { git = "https://github.com/CoreShiftD/CoreShift-Core.git", branch = "main" }
+coreshift-foreground = { git = "https://github.com/CoreShiftD/CoreShift-FocusD.git", branch = "main" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+debug = 0
+incremental = false
+strip = "none"
