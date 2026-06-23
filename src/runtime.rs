@@ -1007,13 +1007,16 @@ impl<R: CommandRunner> Runtime<R> {
     /// Returns enabled third-party packages, cached from packages.xml.
     /// Re-parses only when packages.xml mtime changes.
     fn enabled_third_party_packages(&mut self) -> io::Result<Vec<String>> {
-        let packages_xml = self.config.paths.packages_xml.to_string_lossy().into_owned();
-        let mtime = fs::metadata(&*packages_xml).ok().and_then(|m| m.modified().ok());
+        let mtime = fs::metadata(&self.config.paths.packages_xml).ok().and_then(|m| m.modified().ok());
         if mtime.is_some() && mtime == self.pkg_cache_mtime && !self.pkg_cache.is_empty() {
             return Ok(self.pkg_cache.clone());
         }
-        let content = fs::read_to_string(&*packages_xml)?;
-        self.pkg_cache = parse_enabled_third_party_packages(&content);
+        let output = self.runner.output("cmd", &["package", "list", "packages", "-3", "-e"])?;
+        self.pkg_cache = output
+            .lines()
+            .filter_map(|l| l.strip_prefix("package:"))
+            .map(|s| s.trim().to_string())
+            .collect();
         self.pkg_cache_mtime = mtime;
         Ok(self.pkg_cache.clone())
     }
