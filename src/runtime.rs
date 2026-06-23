@@ -754,7 +754,7 @@ impl<R: CommandRunner> Runtime<R> {
         Ok(())
     }
 
-    fn fast_idle(&mut self, state: DeviceState, threshold: u8) -> io::Result<()> {
+    fn fast_idle(&mut self, state: DeviceState, _threshold: u8) -> io::Result<()> {
         if !self.config.doze.enabled || state.android_major <= 11 {
             return Ok(());
         }
@@ -1140,13 +1140,6 @@ fn read_trimmed(path: impl AsRef<Path>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn parse_package_line(line: &str) -> Option<String> {
-    line.strip_prefix("package:")
-        .map(str::trim)
-        .filter(|package| !package.is_empty())
-        .map(ToOwned::to_owned)
-}
-
 fn parse_u64_setting(value: &str) -> Option<u64> {
     let value = value.trim();
     if value.is_empty() || value == "null" {
@@ -1282,34 +1275,6 @@ fn parse_focusd_status_foreground(status: &str) -> Option<String> {
 /// Parse enabled non-system packages from packages.xml.
 /// Matches lines like: <package name="com.example" ... flags="..." ...>
 /// Bit 1 of flags = SYSTEM (0x1); skip if set.
-fn parse_enabled_third_party_packages(xml: &str) -> Vec<String> {
-    let mut packages = Vec::new();
-    for line in xml.lines() {
-        let line = line.trim();
-        if !line.starts_with("<package ") {
-            continue;
-        }
-        let Some(name) = attr_value(line, "name") else { continue };
-        // flags bit 0 = ApplicationInfo.FLAG_SYSTEM
-        let is_system = attr_value(line, "flags")
-            .and_then(|f| u64::from_str_radix(f.trim_start_matches("0x"), 16).ok())
-            .map(|f| f & 0x1 != 0)
-            .unwrap_or(false);
-        if !is_system {
-            packages.push(name.to_owned());
-        }
-    }
-    packages
-}
-
-/// Extract the value of an XML attribute like key="value" from a tag line.
-fn attr_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
-    let search = format!("{}=\"", key);
-    let start = line.find(search.as_str())? + search.len();
-    let end = line[start..].find('"')? + start;
-    Some(&line[start..end])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
