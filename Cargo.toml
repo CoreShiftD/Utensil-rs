@@ -19,8 +19,8 @@ name = "utensil-webui"
 path = "src/bin/utensil_webui.rs"
 
 [dependencies]
-coreshift-core = { git = "https://github.com/CoreShiftD/CoreShift-Core.git", branch = "main" }
-coreshift-foreground = { git = "https://github.com/CoreShiftD/CoreShift-FocusD.git", branch = "main" }
+coreshift-core = "1.2.8"
+coreshift-foreground = "0.1.0"
 
 [profile.release]
 opt-level = 3
