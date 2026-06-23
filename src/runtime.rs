@@ -861,7 +861,7 @@ impl<R: CommandRunner> Runtime<R> {
             per_hour, on_min, off_min, elapsed.as_secs(), drain_24h
         );
         self.set_property("debug.dcx.drain", &value);
-        self.noti(&format!(
+        self.log(&format!(
             "Drain: {}%/hr | on:{}m | off:{}m | 24h:{}%",
             per_hour, on_min, off_min, drain_24h
         ))?;
