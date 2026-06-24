@@ -1021,13 +1021,11 @@ impl<R: CommandRunner> Runtime<R> {
         Ok(self.pkg_cache.clone())
     }
     fn running_user_packages(&mut self) -> io::Result<Vec<String>> {
-        // Collect PIDs from cgroup top-app and foreground cpusets instead of
-        // scanning all of /proc. stat(/proc/<pid>) gives owner UID via file
-        // ownership — no /status parse needed.
         let mut pids: Vec<i32> = Vec::new();
         for cpuset in &[
             "/dev/cpuset/top-app/cgroup.procs",
             "/dev/cpuset/foreground/cgroup.procs",
+            "/dev/cpuset/background/cgroup.procs",
         ] {
             if let Ok(content) = fs::read_to_string(cpuset) {
                 for line in content.lines() {
@@ -1042,16 +1040,12 @@ impl<R: CommandRunner> Runtime<R> {
 
         let mut packages = Vec::new();
         for pid in pids {
-            // stat /proc/<pid> — file uid == process uid
-            let proc_path = format!("/proc/{}", pid);
-            let Ok(meta) = fs::metadata(&proc_path) else { continue };
-            use std::os::unix::fs::MetadataExt;
-            let uid = meta.uid();
+            let Ok(uid) = coreshift_core::uid::proc_uid(pid) else { continue };
             // u0_a* apps: uid 10000–19999 (primary user)
             if uid < 10000 || uid >= 20000 { continue }
             let Ok(cmdline) = coreshift_core::proc::read_proc_cmdline(pid) else { continue };
             if cmdline.is_empty() { continue }
-            let package = cmdline.split(':').next().unwrap_or(&cmdline).trim_matches('\0');
+            let package = cmdline.split(':').next().unwrap_or(&cmdline).trim();
             if package.is_empty() { continue }
             if packages.iter().any(|e: &String| e == package) { continue }
             packages.push(package.to_string());
