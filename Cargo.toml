@@ -20,7 +20,7 @@ path = "src/bin/utensil_webui.rs"
 
 [dependencies]
 coreshift-core = "1.2.10"
-coreshift-foreground = "0.1.5"
+coreshift-foreground = "0.1.6"
 
 [profile.release]
 opt-level = 3
