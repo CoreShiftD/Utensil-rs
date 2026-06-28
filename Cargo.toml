@@ -19,8 +19,8 @@ name = "utensil-webui"
 path = "src/bin/utensil_webui.rs"
 
 [dependencies]
-coreshift-core = "1.2.8"
-coreshift-foreground = "0.1.1"
+coreshift-core = "1.2.10"
+coreshift-foreground = "0.1.5"
 
 [profile.release]
 opt-level = 3
